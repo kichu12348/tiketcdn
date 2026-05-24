@@ -245,23 +245,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cdnr"
-version = "0.1.0"
-dependencies = [
- "axum",
- "dotenvy",
- "hex",
- "hmac",
- "image",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tower-http",
- "uuid",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1506,6 +1489,23 @@ dependencies = [
  "quick-error",
  "weezl",
  "zune-jpeg",
+]
+
+[[package]]
+name = "tiketcdn"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "dotenvy",
+ "hex",
+ "hmac",
+ "image",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tower-http",
+ "uuid",
 ]
 
 [[package]]

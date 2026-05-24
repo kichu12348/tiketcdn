@@ -6,6 +6,7 @@ use axum::{
     response::IntoResponse,
 };
 use serde::Deserialize;
+use tokio::task::spawn_blocking;
 
 #[derive(Deserialize)]
 pub(crate) struct ImageParams {
@@ -37,28 +38,31 @@ pub async fn get_image(
         return Ok((headers, raw_bytes));
     }
 
-    let img = image::load_from_memory(&raw_bytes).map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            String::from("Error Parsing Image"),
-        )
-    })?;
+    let reader = image::ImageReader::new(Cursor::new(&raw_bytes))
+        .with_guessed_format()
+        .unwrap();
+    let (orig_w, orig_h) = reader.into_dimensions().unwrap();
 
-    let target_w = params.w.unwrap_or(img.width());
-    let target_h = params.h.unwrap_or(img.height());
-    let target_ext = params.ext.as_deref().unwrap_or("webp");
+    let target_w = params.w.unwrap_or(orig_w);
+    let target_h = params.h.unwrap_or(orig_h);
+    let target_ext = params.ext.as_deref().unwrap_or("webp").to_ascii_lowercase();
 
     let cache_path = format!(
         "cache/{}-{}-{}-{}",
         filename, target_w, target_h, target_ext
     );
 
-    let content_type = if target_ext == "jpeg" {
+    let content_type = if target_ext.as_str() == "jpeg" {
         "image/jpeg"
     } else {
         "image/webp"
     };
-
+    let img = image::load_from_memory(&raw_bytes).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            String::from("Error Parsing Image"),
+        )
+    })?;
     if tokio::fs::metadata(&cache_path).await.is_ok() {
         let cache_bytes = tokio::fs::read(&cache_path).await.unwrap();
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
@@ -67,20 +71,25 @@ pub async fn get_image(
         return Ok((headers, cache_bytes));
     }
 
-    let resized_img = img.resize_exact(target_w, target_h, image::imageops::FilterType::Nearest);
+    let final_bytes = spawn_blocking(move || {
+        let resized_img =
+            img.resize_exact(target_w, target_h, image::imageops::FilterType::Triangle);
 
-    let mut buffer = Cursor::new(Vec::new());
-    if target_ext == "jpeg" {
-        resized_img
-            .write_to(&mut buffer, image::ImageFormat::Jpeg)
-            .unwrap();
-    } else {
-        resized_img
-            .write_to(&mut buffer, image::ImageFormat::WebP)
-            .unwrap();
-    }
+        let mut buffer = Cursor::new(Vec::new());
+        if target_ext.as_str() == "jpeg" {
+            resized_img
+                .write_to(&mut buffer, image::ImageFormat::Jpeg)
+                .unwrap();
+        } else {
+            resized_img
+                .write_to(&mut buffer, image::ImageFormat::WebP)
+                .unwrap();
+        }
 
-    let final_bytes = buffer.into_inner();
+        return buffer.into_inner();
+    })
+    .await
+    .unwrap();
 
     tokio::fs::write(&cache_path, &final_bytes).await.unwrap();
 
