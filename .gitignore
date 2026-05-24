@@ -1,0 +1,6 @@
+/target
+/uploads
+/test
+/cache
+
+.env*
