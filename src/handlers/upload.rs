@@ -1,16 +1,17 @@
-use std::io::Cursor;
-
 use axum::{
     Json,
-    extract::{Multipart, Query},
+    extract::{Multipart, Query, State},
     http::StatusCode,
 };
 
-use crate::util::{now::now_secs, sign::create_signature};
+use tokio::io::AsyncWriteExt;
+
+use crate::{
+    AppState, MAX_SIZE,
+    util::{now::now_secs, sign::create_signature},
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-
-pub const MAX_SIZE: usize = 10; // 10 MB is the maximum size
 
 #[derive(Deserialize)]
 pub(crate) struct UploadUrlRequest {
@@ -57,6 +58,7 @@ pub async fn generate_upload_url(Json(payload): Json<UploadUrlRequest>) -> Json<
 }
 
 pub async fn handle_upload(
+    State(app_state): State<AppState>,
     Query(params): Query<UploadRequest>,
     mut multipart: Multipart,
 ) -> Result<Json<UploadResponse>, (StatusCode, Json<UploadErrorResponse>)> {
@@ -80,7 +82,7 @@ pub async fn handle_upload(
 
     let mut file_name = params.filename;
 
-    while let Some(field) = multipart.next_field().await.map_err(|err| {
+    while let Some(mut field) = multipart.next_field().await.map_err(|err| {
         (
             StatusCode::BAD_REQUEST,
             Json(UploadErrorResponse {
@@ -91,48 +93,84 @@ pub async fn handle_upload(
         let name = field.name().unwrap_or("").to_string();
 
         if name == "file" {
-            let data = field.bytes().await.unwrap();
-
-            if data.len() > MAX_SIZE * 1024 * 1024 {
-                return Err((
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    Json(UploadErrorResponse {
-                        error: String::from("File too large"),
-                    }),
-                ));
-            }
-
-            let img = image::load_from_memory(&data).map_err(|err| {
+            let temp_id = Uuid::new_v4().simple().to_string();
+            let temp_path = format!("uploads/temp_{}", temp_id);
+            let mut temp_file = tokio::fs::File::create(&temp_path).await.map_err(|err| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(UploadErrorResponse {
-                        error: format!("File Cannot be Parsed: {}", err),
+                        error: format!("File Write Error: {}", err),
                     }),
                 )
             })?;
 
-            let rgba_img = img.to_rgba8();
+            let mut total_size: usize = 0;
 
-            let mut buffer = Cursor::new(Vec::new());
+            while let Some(chunk) = field.chunk().await.map_err(|err| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(UploadErrorResponse {
+                        error: format!("File Read Error: {}", err),
+                    }),
+                )
+            })? {
+                total_size += chunk.len();
 
-            image::DynamicImage::ImageRgba8(rgba_img.clone())
-                .write_to(&mut buffer, image::ImageFormat::WebP)
-                .map_err(|err| {
+                if total_size > MAX_SIZE * 1024 * 1024 {
+                    let _ = tokio::fs::remove_file(&temp_path).await;
+                    return Err((
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        Json(UploadErrorResponse {
+                            error: String::from("File too large"),
+                        }),
+                    ));
+                }
+                temp_file.write_all(&chunk).await.map_err(|err| {
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         Json(UploadErrorResponse {
-                            error: format!("File Cannot be Parsed: {}", err),
+                            error: format!("File Write Error: {}", err),
                         }),
                     )
                 })?;
+            }
 
-            let webp_filename = Uuid::new_v4().simple();
+            drop(temp_file);
 
-            let file_path = format!("uploads/{}.webp", webp_filename);
+            let webp_filename = Uuid::new_v4().simple().to_string();
+            let final_path = format!("uploads/{}.webp", webp_filename);
 
-            tokio::fs::write(&file_path, buffer.into_inner())
-                .await
-                .unwrap();
+            let _permit = app_state.conversion_limit.acquire().await.unwrap();
+
+            let t_path = temp_path.clone();
+            let f_path = final_path.clone();
+
+            let final_result = tokio::task::spawn_blocking(move || {
+                let img = image::ImageReader::open(&t_path)
+                    .map_err(|err| format!("Image Processing Error: {}", err))?
+                    .with_guessed_format()
+                    .map_err(|err| format!("Image Processing Error: {}", err))?
+                    .decode()
+                    .map_err(|err| format!("Image Processing Error: {}", err))?;
+
+                img.save_with_format(&f_path, image::ImageFormat::WebP)
+                    .map_err(|err| format!("Image Saving Error: {}", err))?;
+
+                Ok::<(), String>(())
+            })
+            .await
+            .unwrap();
+
+            let _ = tokio::fs::remove_file(&temp_path).await;
+
+            if let Err(e) = final_result {
+                let _ = tokio::fs::remove_file(&final_path).await;
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(UploadErrorResponse { error: e }),
+                ));
+            }
+
             file_name = format!("{}.webp", webp_filename);
         }
     }

@@ -7,22 +7,33 @@ use axum::{
 };
 use dotenvy::dotenv;
 use serde::Serialize;
-use std::env;
-use tokio::net::TcpListener;
+use std::{env, sync::Arc};
+use tokio::{net::TcpListener, sync::Semaphore};
 
 use handlers::{
     serve_image::get_image,
-    upload::{MAX_SIZE, generate_upload_url, handle_upload},
+    upload::{generate_upload_url, handle_upload},
 };
+
+pub const MAX_SIZE: usize = 15; // 15 MB is the maximum size
 
 #[derive(Serialize)]
 struct HelloWorld {
     message: String,
 }
 
+#[derive(Clone)]
+pub struct AppState {
+    pub conversion_limit: Arc<Semaphore>,
+}
+
 #[tokio::main]
 async fn main() {
     dotenv().ok();
+
+    let app_state = AppState {
+        conversion_limit: Arc::new(Semaphore::new(4)),
+    };
 
     let app: Router = Router::new()
         .route(
@@ -36,6 +47,7 @@ async fn main() {
         .route("/generate-url", post(generate_upload_url))
         .route("/upload", post(handle_upload))
         .route("/image/{filename}", get(get_image))
+        .with_state(app_state)
         .layer(DefaultBodyLimit::max(MAX_SIZE * 1024 * 1024));
 
     let port = env::var("PORT").expect("No Port Number Found");
