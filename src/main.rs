@@ -12,10 +12,8 @@ use tokio::net::TcpListener;
 
 use handlers::{
     serve_image::get_image,
-    upload::{generate_upload_url, handle_upload},
+    upload::{MAX_SIZE, generate_upload_url, handle_upload},
 };
-
-const MAX_SIZE: usize = 50; // 50 MB is the maximum size
 
 #[derive(Serialize)]
 struct HelloWorld {

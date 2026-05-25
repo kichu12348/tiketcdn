@@ -10,7 +10,7 @@ use crate::util::{now::now_secs, sign::create_signature};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-const MAX_SIZE: usize = 50;
+pub const MAX_SIZE: usize = 10; // 10 MB is the maximum size
 
 #[derive(Deserialize)]
 pub(crate) struct UploadUrlRequest {
