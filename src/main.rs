@@ -68,7 +68,7 @@ async fn shutdown_signal() {
 async fn main() {
     dotenv().ok();
 
-    let cache_limit = NonZeroUsize::new(5).unwrap(); // Track up to 5000 cached items
+    let cache_limit = NonZeroUsize::new(5000).unwrap(); // Track up to 5000 cached items
 
     let app_state = AppState {
         conversion_limit: Arc::new(Semaphore::new(4)),
