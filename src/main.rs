@@ -34,9 +34,11 @@ pub struct AppState {
 }
 
 async fn shutdown_signal() {
-    let ctrl_c = tokio::signal::ctrl_c()
-        .await
-        .expect("Failed to listen for shutdown signal");
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to listen for shutdown signal");
+    };
 
     #[cfg(unix)]
     let terminate = async {
@@ -47,18 +49,11 @@ async fn shutdown_signal() {
     };
 
     #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>(); // On non-Unix platforms, just wait indefinitely
+    let terminate = std::future::pending::<()>();
 
-    #[cfg(unix)]
     tokio::select! {
-        let _ = ctrl_c => {},
-        let _ = terminate => {},
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = ctrl_c;
-        let _ = terminate;
+        _ = ctrl_c => {},
+        _ = terminate => {},
     }
 
     println!("Exiting...");
