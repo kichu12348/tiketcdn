@@ -6,9 +6,13 @@ use axum::{
     routing::{get, post},
 };
 use dotenvy::dotenv;
+use lru::LruCache;
 use serde::Serialize;
-use std::{env, sync::Arc};
-use tokio::{net::TcpListener, sync::Semaphore};
+use std::{env, num::NonZeroUsize, sync::Arc};
+use tokio::{
+    net::TcpListener,
+    sync::{Mutex, Semaphore},
+};
 
 use handlers::{
     serve_image::get_image,
@@ -24,17 +28,52 @@ struct HelloWorld {
 
 #[derive(Clone)]
 pub struct AppState {
+    pub cache_tracker: Arc<Mutex<LruCache<String, ()>>>,
     pub conversion_limit: Arc<Semaphore>,
-    pub resize_limit: Arc<Semaphore>
+    pub resize_limit: Arc<Semaphore>,
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = tokio::signal::ctrl_c()
+        .await
+        .expect("Failed to listen for shutdown signal");
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Failed to listen for SIGTERM")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>(); // On non-Unix platforms, just wait indefinitely
+
+    #[cfg(unix)]
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = ctrl_c;
+        let _ = terminate;
+    }
+
+    println!("Exiting...");
 }
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
 
+    let cache_limit = NonZeroUsize::new(5).unwrap(); // Track up to 5000 cached items
+
     let app_state = AppState {
         conversion_limit: Arc::new(Semaphore::new(4)),
-        resize_limit: Arc::new(Semaphore::new(8))
+        resize_limit: Arc::new(Semaphore::new(8)),
+        cache_tracker: Arc::new(Mutex::new(LruCache::new(cache_limit))),
     };
 
     let app: Router = Router::new()
@@ -64,5 +103,11 @@ async fn main() {
     tokio::fs::create_dir_all("uploads").await.unwrap();
     tokio::fs::create_dir_all("cache").await.unwrap();
 
-    axum::serve(listner, app).await.unwrap();
+    axum::serve(listner, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+
+    //clear cache on shutdown
+    tokio::fs::remove_dir_all("cache").await.unwrap();
 }

@@ -62,6 +62,11 @@ pub async fn get_image(
 
     if tokio::fs::metadata(&cache_path).await.is_ok() {
         let cache_bytes = tokio::fs::read(&cache_path).await.unwrap();
+        {
+            let mut tracker = app_state.cache_tracker.lock().await;
+            tracker.put(cache_path.clone(), ());
+        }
+
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
         headers.insert("x-cache", HeaderValue::from_static("HIT"));
 
@@ -92,6 +97,15 @@ pub async fn get_image(
     .unwrap();
 
     tokio::fs::write(&cache_path, &final_bytes).await.unwrap();
+
+    {
+        let mut tracker = app_state.cache_tracker.lock().await;
+        if let Some((evicted_path, _)) = tracker.push(cache_path.clone(), ()) {
+            tokio::spawn(async move {
+                let _ = tokio::fs::remove_file(evicted_path).await;
+            });
+        }
+    }
 
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
     headers.insert("x-cache", HeaderValue::from_static("MISS"));
