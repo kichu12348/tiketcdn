@@ -25,6 +25,7 @@ struct HelloWorld {
 #[derive(Clone)]
 pub struct AppState {
     pub conversion_limit: Arc<Semaphore>,
+    pub resize_limit: Arc<Semaphore>
 }
 
 #[tokio::main]
@@ -33,6 +34,7 @@ async fn main() {
 
     let app_state = AppState {
         conversion_limit: Arc::new(Semaphore::new(4)),
+        resize_limit: Arc::new(Semaphore::new(8))
     };
 
     let app: Router = Router::new()
