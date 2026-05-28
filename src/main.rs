@@ -3,7 +3,7 @@ mod util;
 use axum::{
     Router,
     extract::{DefaultBodyLimit, Json},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 use dotenvy::dotenv;
 use lru::LruCache;
@@ -18,6 +18,8 @@ use handlers::{
     serve_image::get_image,
     upload::{generate_upload_url, handle_upload},
 };
+
+use crate::handlers::delete_image::delete_image;
 
 pub const MAX_SIZE: usize = 15; // 15 MB is the maximum size
 
@@ -83,6 +85,7 @@ async fn main() {
         .route("/generate-url", post(generate_upload_url))
         .route("/upload", post(handle_upload))
         .route("/image/{filename}", get(get_image))
+        .route("/image/{filename}/delete-image", delete(delete_image))
         .with_state(app_state)
         .layer(DefaultBodyLimit::max(MAX_SIZE * 1024 * 1024));
 
