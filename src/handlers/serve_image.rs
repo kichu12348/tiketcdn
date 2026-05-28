@@ -47,6 +47,11 @@ pub async fn get_image(
 
     let target_w = params.w.unwrap_or(orig_w);
     let target_h = params.h.unwrap_or(orig_h);
+
+    if target_h <= 0 || target_w <= 0 {
+        return Err((StatusCode::BAD_REQUEST, String::from("Invalid dimensions!")));
+    }
+
     let target_ext = params.ext.as_deref().unwrap_or("webp").to_ascii_lowercase();
 
     let cache_path = format!(
