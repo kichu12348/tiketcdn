@@ -14,6 +14,7 @@ pub(crate) struct ImageParams {
     w: Option<u32>,
     h: Option<u32>,
     ext: Option<String>,
+    filter: Option<String>,
 }
 
 pub async fn get_image(
@@ -54,9 +55,15 @@ pub async fn get_image(
 
     let target_ext = params.ext.as_deref().unwrap_or("webp").to_ascii_lowercase();
 
+    let target_filter = params
+        .filter
+        .as_deref()
+        .unwrap_or("tri")
+        .to_ascii_lowercase();
+
     let cache_path = format!(
-        "cache/{}-{}-{}-{}",
-        filename, target_w, target_h, target_ext
+        "cache/{}-{}-{}-{}-{}",
+        filename, target_w, target_h, target_ext, target_filter
     );
 
     let content_type = if target_ext.as_str() == "jpeg" {
@@ -82,8 +89,16 @@ pub async fn get_image(
 
     let final_bytes = spawn_blocking(move || {
         let img = image::load_from_memory(&raw_bytes).unwrap();
-        let resized_img =
-            img.resize_exact(target_w, target_h, image::imageops::FilterType::Triangle);
+
+        let filter_type = match target_filter.as_str() {
+            "tri" => image::imageops::FilterType::Triangle,
+            "lanc" => image::imageops::FilterType::Lanczos3,
+            "gauss" => image::imageops::FilterType::Gaussian,
+            "nearest" => image::imageops::FilterType::Nearest,
+            _ => image::imageops::FilterType::Triangle,
+        };
+
+        let resized_img = img.resize_exact(target_w, target_h, filter_type);
 
         let mut buffer = Cursor::new(Vec::new());
         if target_ext.as_str() == "jpeg" {

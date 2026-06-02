@@ -3,6 +3,7 @@ mod util;
 use axum::{
     Router,
     extract::{DefaultBodyLimit, Json},
+    http::Method,
     routing::{delete, get, post},
 };
 use dotenvy::dotenv;
@@ -13,6 +14,7 @@ use tokio::{
     net::TcpListener,
     sync::{Mutex, Semaphore},
 };
+use tower_http::cors::{Any, CorsLayer};
 
 use handlers::{
     serve_image::get_image,
@@ -65,6 +67,12 @@ async fn shutdown_signal() {
 async fn main() {
     dotenv().ok();
 
+    let cors = CorsLayer::new().allow_origin(Any).allow_methods([
+        Method::GET,
+        Method::POST,
+        Method::DELETE,
+    ]);
+
     let cache_limit = NonZeroUsize::new(5000).unwrap(); // Track up to 5000 cached items
 
     let app_state = AppState {
@@ -87,7 +95,8 @@ async fn main() {
         .route("/image/{filename}", get(get_image))
         .route("/image/{filename}/delete-image", delete(delete_image))
         .with_state(app_state)
-        .layer(DefaultBodyLimit::max(MAX_SIZE * 1024 * 1024));
+        .layer(DefaultBodyLimit::max(MAX_SIZE * 1024 * 1024))
+        .layer(cors);
 
     let port = env::var("PORT").expect("No Port Number Found");
     let address = env::var("ADDRESS").expect("No Address Found");
