@@ -35,7 +35,7 @@ pub async fn get_image(
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, String::from("Image not found!")))?;
 
-    if params.w.is_none() && params.h.is_none() && params.ext.is_none() {
+    if params.w.is_none() && params.h.is_none() && params.ext.is_none() && params.filter.is_none() {
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("image/webp"));
         headers.insert("x-cache", HeaderValue::from_static("HIT"));
         return Ok((headers, raw_bytes));
