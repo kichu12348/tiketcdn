@@ -1,6 +1,6 @@
-use std::io::Cursor;
+use std::{cmp::min, io::Cursor};
 
-use crate::AppState;
+use crate::{AppState, CACHE_DIR, UPLOAD_DIR};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
@@ -22,7 +22,7 @@ pub async fn get_image(
     Query(params): Query<ImageParams>,
     State(app_state): State<AppState>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-    let file_path = format!("uploads/{}", filename);
+    let file_path = format!("{}/{}", UPLOAD_DIR, filename);
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CACHE_CONTROL,
@@ -49,6 +49,9 @@ pub async fn get_image(
     let target_w = params.w.unwrap_or(orig_w);
     let target_h = params.h.unwrap_or(orig_h);
 
+    let target_w = min(target_w, orig_w);
+    let target_h = min(target_h, orig_h);
+
     if target_h <= 0 || target_w <= 0 {
         return Err((StatusCode::BAD_REQUEST, String::from("Invalid dimensions!")));
     }
@@ -62,8 +65,8 @@ pub async fn get_image(
         .to_ascii_lowercase();
 
     let cache_path = format!(
-        "cache/{}-{}-{}-{}-{}",
-        filename, target_w, target_h, target_ext, target_filter
+        "{}/{}-{}-{}-{}-{}",
+        CACHE_DIR, filename, target_w, target_h, target_ext, target_filter
     );
 
     let content_type = if target_ext.as_str() == "jpeg" {

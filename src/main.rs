@@ -23,7 +23,12 @@ use handlers::{
 
 use crate::handlers::delete_image::delete_image;
 
-pub const MAX_SIZE: usize = 15; // 15 MB is the maximum size
+pub const MAX_SIZE: usize = 10; // 10 MB is the maximum size
+pub const UPLOAD_URL_EXPIRATION: u64 = 15 * 60; // 15 minutes in seconds
+pub const CACHE_EXPIRATION: u64 = 60 * 60; // 1 hour in seconds
+pub const CACHE_DIR: &str = ".cache";
+pub const UPLOAD_DIR: &str = "uploads";
+pub const CACHE_TRACKER_SIZE: usize = 500; // Track up to 500 cached items
 
 #[derive(Serialize)]
 struct HelloWorld {
@@ -73,7 +78,7 @@ async fn main() {
         Method::DELETE,
     ]);
 
-    let cache_limit = NonZeroUsize::new(5000).unwrap(); // Track up to 5000 cached items
+    let cache_limit = NonZeroUsize::new(CACHE_TRACKER_SIZE).unwrap(); // Track up to 500 cached items
 
     let app_state = AppState {
         conversion_limit: Arc::new(Semaphore::new(4)),
@@ -107,8 +112,8 @@ async fn main() {
 
     println!("Server running on http://{}", socket_addr);
 
-    tokio::fs::create_dir_all("uploads").await.unwrap();
-    tokio::fs::create_dir_all("cache").await.unwrap();
+    tokio::fs::create_dir_all(UPLOAD_DIR).await.unwrap();
+    tokio::fs::create_dir_all(CACHE_DIR).await.unwrap();
 
     axum::serve(listner, app)
         .with_graceful_shutdown(shutdown_signal())
@@ -116,5 +121,5 @@ async fn main() {
         .unwrap();
 
     //clear cache on shutdown
-    tokio::fs::remove_dir_all("cache").await.unwrap();
+    tokio::fs::remove_dir_all(CACHE_DIR).await.unwrap();
 }

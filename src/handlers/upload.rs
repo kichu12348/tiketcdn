@@ -7,7 +7,7 @@ use axum::{
 use tokio::io::AsyncWriteExt;
 
 use crate::{
-    AppState, MAX_SIZE,
+    AppState, MAX_SIZE, UPLOAD_DIR, UPLOAD_URL_EXPIRATION,
     util::{now::now_secs, sign::create_signature},
 };
 use serde::{Deserialize, Serialize};
@@ -42,7 +42,7 @@ pub(crate) struct UploadErrorResponse {
 }
 
 pub async fn generate_upload_url(Json(payload): Json<UploadUrlRequest>) -> Json<UploadUrlResponse> {
-    let expires = now_secs() + 3600;
+    let expires = now_secs() + UPLOAD_URL_EXPIRATION;
 
     let signature = create_signature(&payload.filename, expires);
 
@@ -94,7 +94,7 @@ pub async fn handle_upload(
 
         if name == "file" {
             let temp_id = Uuid::new_v4().simple().to_string();
-            let temp_path = format!("uploads/temp_{}", temp_id);
+            let temp_path = format!("{}/temp_{}", UPLOAD_DIR, temp_id);
             let mut temp_file = tokio::fs::File::create(&temp_path).await.map_err(|err| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -138,7 +138,7 @@ pub async fn handle_upload(
             drop(temp_file);
 
             let webp_filename = Uuid::new_v4().simple().to_string();
-            let final_path = format!("uploads/{}.webp", webp_filename);
+            let final_path = format!("{}/{}.webp", UPLOAD_DIR, webp_filename);
 
             let _permit = app_state.conversion_limit.acquire().await.unwrap();
 
